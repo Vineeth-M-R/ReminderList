@@ -111,6 +111,14 @@ function App() {
   return (
     <main className="page">
       <section className="notebook">
+        <div className="hero">
+          <img
+            src="/profile.jpeg"
+            alt="Profile"
+            className="hero-image"
+            loading="lazy"
+          />
+        </div>
         <header className="heading">
           <p className="date">{dayLabel}</p>
           <p className="title">To-do</p>

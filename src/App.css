@@ -148,6 +148,21 @@ body {
   background: #f1e8dc;
 }
 
+.hero {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.hero-image {
+  width: 160px;
+  height: 160px;
+  object-fit: cover;
+  border-radius: 16px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+  border: 2px solid #e6d6c5;
+}
+
 .list-item-container {
   display: flex;
   align-items: center;
