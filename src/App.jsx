@@ -16,6 +16,7 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
+  arrayMove,
 } from '@dnd-kit/sortable'
 import {
   useSortable,
@@ -276,17 +277,33 @@ function App() {
       return
     }
 
+    // Check if dropped on another todo item within the same column (reordering)
+    const overTodo = todos.find((todo) => todo.id === over.id)
+    if (overTodo && overTodo.status === activeTodo.status && activeId !== over.id) {
+      // Reorder within the same column
+      const columnItems = todosByStatus[activeTodo.status]
+      const oldIndex = columnItems.findIndex((item) => item.id === activeId)
+      const newIndex = columnItems.findIndex((item) => item.id === over.id)
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const reorderedItems = arrayMove(columnItems, oldIndex, newIndex)
+        // Update the todos array maintaining the order
+        const otherStatusItems = todos.filter(
+          (todo) => todo.status !== activeTodo.status
+        )
+        setTodos([...otherStatusItems, ...reorderedItems])
+      }
+      return
+    }
+
     let newStatus = activeTodo.status
 
     // Check if dropped on a column
     if (over.data.current?.type === 'column') {
       newStatus = over.data.current.status
-    } else {
-      // Dropped on another todo item - use that item's status
-      const overTodo = todos.find((todo) => todo.id === over.id)
-      if (overTodo) {
-        newStatus = overTodo.status
-      }
+    } else if (overTodo) {
+      // Dropped on another todo item in a different column
+      newStatus = overTodo.status
     }
 
     if (newStatus !== activeTodo.status) {
@@ -327,7 +344,7 @@ function App() {
           />
           <button type="submit" className="add-button">
             Add
-          </button>
+        </button>
         </form>
 
         {loading ? (
@@ -379,7 +396,7 @@ function App() {
             className="search-input"
             aria-label="Search tasks"
           />
-        </div>
+      </div>
       </section>
     </main>
   )
