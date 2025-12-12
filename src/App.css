@@ -1,6 +1,6 @@
 :root {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  color: #1f1f1f;
+  color: #000000;
   background: #f7e9d7;
 }
 
@@ -69,12 +69,13 @@ body {
   font-size: 18px;
   font-weight: 600;
   margin: 0;
+  color: #000000;
 }
 
 .title {
   font-size: 16px;
   font-weight: 500;
-  color: #8f8476;
+  color: #000000;
   margin: 0;
 }
 
@@ -91,6 +92,7 @@ body {
   border-radius: 10px;
   background: #fffdfa;
   font-size: 15px;
+  color: #000000;
 }
 
 .add-input:focus {
@@ -133,6 +135,7 @@ body {
   border-radius: 10px;
   background: #fffdf7;
   font-size: 15px;
+  color: #000000;
   cursor: pointer;
   transition: background 120ms ease, transform 120ms ease;
 }
@@ -144,7 +147,7 @@ body {
 
 .list-item--done {
   text-decoration: line-through;
-  color: #8c8478;
+  color: #000000;
   background: #f1e8dc;
 }
 
