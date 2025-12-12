@@ -1,16 +1,143 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { supabase } from './lib/supabase'
+import {
+  DndContext,
+  DragOverlay,
+  closestCorners,
+  pointerWithin,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDroppable,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import {
+  useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+
+const STATUSES = {
+  TODO: 'todo',
+  IN_PROGRESS: 'in_progress',
+  DONE: 'done',
+}
+
+function SortableTodoItem({ item }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <div
+        className={`list-item ${item.status === STATUSES.DONE ? 'list-item--done' : ''}`}
+      >
+        {item.text}
+      </div>
+    </div>
+  )
+}
+
+function KanbanColumn({ id, title, items }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id,
+    data: {
+      type: 'column',
+      status: id,
+    },
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`kanban-column ${isOver ? 'kanban-column--over' : ''}`}
+      data-column-id={id}
+    >
+      <h2 className="kanban-column-title">{title}</h2>
+      <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
+        <div className="kanban-column-content">
+          {items.length === 0 ? (
+            <div className="kanban-empty">No tasks</div>
+          ) : (
+            items.map((item) => (
+              <SortableTodoItem key={item.id} item={item} />
+            ))
+          )}
+        </div>
+      </SortableContext>
+    </div>
+  )
+}
+
+function DeleteSection({ isOver }) {
+  const { setNodeRef } = useDroppable({
+    id: 'delete',
+    data: {
+      type: 'delete',
+    },
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`delete-section ${isOver ? 'delete-section--over' : ''}`}
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M3 6h18" />
+        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+      </svg>
+      <p className="delete-section-text">
+        {isOver ? 'Drop to delete' : 'Drag here to delete'}
+      </p>
+    </div>
+  )
+}
 
 function App() {
   const [todos, setTodos] = useState([])
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeId, setActiveId] = useState(null)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
 
   useEffect(() => {
     fetchTodos()
 
-    // Subscribe to real-time changes
     const channel = supabase
       .channel('todos-changes')
       .on(
@@ -46,9 +173,6 @@ function App() {
 
   const dayLabel = useMemo(() => {
     const formatter = new Intl.DateTimeFormat('en-GB', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
       weekday: 'long',
     })
     return formatter.format(new Date())
@@ -62,7 +186,7 @@ function App() {
     try {
       const { data, error } = await supabase
         .from('todos')
-        .insert([{ text: value, done: false }])
+        .insert([{ text: value, status: STATUSES.TODO }])
         .select()
         .single()
 
@@ -74,14 +198,11 @@ function App() {
     }
   }
 
-  async function toggleTodo(id) {
-    const todo = todos.find((item) => item.id === id)
-    if (!todo) return
-
+  async function updateTodoStatus(id, newStatus) {
     try {
       const { data, error } = await supabase
         .from('todos')
-        .update({ done: !todo.done })
+        .update({ status: newStatus })
         .eq('id', id)
         .select()
         .single()
@@ -91,13 +212,11 @@ function App() {
         current.map((item) => (item.id === id ? data : item))
       )
     } catch (error) {
-      console.error('Failed to toggle todo:', error)
+      console.error('Failed to update todo status:', error)
     }
   }
 
-  async function deleteTodo(id, event) {
-    event.stopPropagation()
-
+  async function deleteTodo(id) {
     try {
       const { error } = await supabase.from('todos').delete().eq('id', id)
 
@@ -108,26 +227,100 @@ function App() {
     }
   }
 
+  const todosByStatus = useMemo(() => {
+    const filtered = searchQuery.trim()
+      ? todos.filter((todo) =>
+          todo.text.toLowerCase().includes(searchQuery.toLowerCase().trim())
+        )
+      : todos
+
+    return {
+      [STATUSES.TODO]: filtered.filter((todo) => todo.status === STATUSES.TODO),
+      [STATUSES.IN_PROGRESS]: filtered.filter(
+        (todo) => todo.status === STATUSES.IN_PROGRESS
+      ),
+      [STATUSES.DONE]: filtered.filter((todo) => todo.status === STATUSES.DONE),
+    }
+  }, [todos, searchQuery])
+
+  const [overDeleteSection, setOverDeleteSection] = useState(false)
+
+  function handleDragStart(event) {
+    setActiveId(event.active.id)
+    setOverDeleteSection(false)
+  }
+
+  function handleDragOver(event) {
+    const { over } = event
+    if (over && over.data.current?.type === 'delete') {
+      setOverDeleteSection(true)
+    } else {
+      setOverDeleteSection(false)
+    }
+  }
+
+  function handleDragEnd(event) {
+    const { active, over } = event
+    setActiveId(null)
+    setOverDeleteSection(false)
+
+    if (!over) return
+
+    const activeId = active.id
+    const activeTodo = todos.find((todo) => todo.id === activeId)
+    if (!activeTodo) return
+
+    // Check if dropped on delete section
+    if (over.data.current?.type === 'delete') {
+      deleteTodo(activeId)
+      return
+    }
+
+    let newStatus = activeTodo.status
+
+    // Check if dropped on a column
+    if (over.data.current?.type === 'column') {
+      newStatus = over.data.current.status
+    } else {
+      // Dropped on another todo item - use that item's status
+      const overTodo = todos.find((todo) => todo.id === over.id)
+      if (overTodo) {
+        newStatus = overTodo.status
+      }
+    }
+
+    if (newStatus !== activeTodo.status) {
+      updateTodoStatus(activeId, newStatus)
+    }
+  }
+
+  const activeTodo = activeId ? todos.find((todo) => todo.id === activeId) : null
+
   return (
     <main className="page">
       <section className="notebook">
+        <div className="top-bar">
+          <p className="date">{dayLabel}</p>
+        </div>
+        <br />
         <div className="hero">
           <img
-            src="/profile.jpeg"
+            src="/profile.jpg"
             alt="Profile"
             className="hero-image"
             loading="lazy"
           />
         </div>
-        <header className="heading">
-          <p className="date">{dayLabel}</p>
-          <p className="title">To-do</p>
-        </header>
-
         <form className="add-form" onSubmit={addTodo}>
           <input
             value={text}
             onChange={(event) => setText(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                addTodo(event)
+              }
+            }}
             placeholder="Add a task..."
             className="add-input"
             aria-label="Add a task"
@@ -137,33 +330,56 @@ function App() {
           </button>
         </form>
 
-        <ul className="list">
-          {loading ? (
-            <li className="list-item">Loading...</li>
-          ) : todos.length === 0 ? (
-            <li className="list-item">No tasks yet. Add one above!</li>
-          ) : (
-            todos.map((item) => (
-              <li key={item.id} className="list-item-container">
-                <button
-                  type="button"
-                  onClick={() => toggleTodo(item.id)}
-                  className={`list-item ${item.done ? 'list-item--done' : ''}`}
+        {loading ? (
+          <div className="kanban-loading">Loading...</div>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={pointerWithin}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="kanban-board">
+              <KanbanColumn
+                id={STATUSES.TODO}
+                title="To Do"
+                items={todosByStatus[STATUSES.TODO]}
+              />
+              <KanbanColumn
+                id={STATUSES.IN_PROGRESS}
+                title="In Progress"
+                items={todosByStatus[STATUSES.IN_PROGRESS]}
+              />
+              <KanbanColumn
+                id={STATUSES.DONE}
+                title="Done"
+                items={todosByStatus[STATUSES.DONE]}
+              />
+            </div>
+            <DeleteSection isOver={overDeleteSection} />
+            <DragOverlay>
+              {activeTodo ? (
+                <div
+                  className={`list-item ${activeTodo.status === STATUSES.DONE ? 'list-item--done' : ''}`}
                 >
-                  {item.text}
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => deleteTodo(item.id, e)}
-                  className="delete-button"
-                  aria-label="Delete task"
-                >
-                  ×
-                </button>
-              </li>
-            ))
-          )}
-        </ul>
+                  {activeTodo.text}
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        )}
+
+        <div className="search-container">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search tasks..."
+            className="search-input"
+            aria-label="Search tasks"
+          />
+        </div>
       </section>
     </main>
   )

@@ -28,7 +28,7 @@ In your Supabase project dashboard:
 CREATE TABLE todos (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   text TEXT NOT NULL,
-  done BOOLEAN DEFAULT FALSE NOT NULL,
+  status TEXT DEFAULT 'todo' NOT NULL CHECK (status IN ('todo', 'in_progress', 'done')),
   created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
@@ -53,6 +53,31 @@ CREATE POLICY "Allow public delete access" ON todos
 
 -- Create an index on created_at for better query performance
 CREATE INDEX idx_todos_created_at ON todos(created_at);
+
+-- Create an index on status for better query performance
+CREATE INDEX idx_todos_status ON todos(status);
+```
+
+**Note:** If you already have a `todos` table with a `done` boolean field, you can migrate it by running:
+
+```sql
+-- Add status column
+ALTER TABLE todos ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'todo';
+
+-- Migrate existing data: set status based on done field
+UPDATE todos SET status = CASE 
+  WHEN done = true THEN 'done'
+  ELSE 'todo'
+END;
+
+-- Make status NOT NULL after migration
+ALTER TABLE todos ALTER COLUMN status SET NOT NULL;
+
+-- Add check constraint
+ALTER TABLE todos ADD CONSTRAINT todos_status_check CHECK (status IN ('todo', 'in_progress', 'done'));
+
+-- Optionally remove the old done column (backup first!)
+-- ALTER TABLE todos DROP COLUMN done;
 ```
 
 ## 4. Set Up Environment Variables
